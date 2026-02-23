@@ -215,36 +215,6 @@ def build_model(requests, depots):
     all_nodes = list(range(N))
     vehicles = list(range(N_K))
 
-    # Build complete arc set
-    arcs = [(i, j) for i in all_nodes for j in all_nodes if i != j]
-    
-    # Adjacency lists
-    out_nbrs = {i: [j for i2, j in arcs if i2 == i] for i in all_nodes}
-    in_nbrs = {j: [i for i, j2 in arcs if j2 == j] for j in all_nodes}
-    
-    model = gp.Model("MDCVRPTW")
-    model.setParam('MIPGap', 0.001)
-    
-    # Decision variables
-    x = model.addVars(arcs, vehicles, vtype=GRB.BINARY, name="x")
-    y = model.addVars(request_nodes, vehicles, vtype=GRB.BINARY, name="y")
-    z = model.addVars(vehicles, vtype=GRB.BINARY, name="z")
-    t = model.addVars(all_nodes, vehicles, lb=0, ub=M, name="t")
-    
-    # Objective: minimize travel cost + vehicle activation cost + unserved penalty
-    obj_travel = gp.quicksum(travel[i, j] * x[i, j, k] 
-                            for i, j in arcs for k in vehicles)
-    obj_vehicles = gp.quicksum(50 * z[k] for k in vehicles)
-    obj_unserved = gp.quicksum(1000 * (1 - gp.quicksum(y[i, k] for k in vehicles))
-                              for i in request_nodes)
-    model.setObjective(obj_travel + obj_vehicles + obj_unserved, GRB.MINIMIZE)
-    
-    # Symmetry breaking: force vehicles to be used in order
-    for k in range(N_K - 1):
-        model.addConstr(z[k] >= z[k + 1], name=f"symm_break_{k}")
-    
-    # Continue with other constraints = list(range(N_K))
-
     # Time windows
     earliest = {}
     latest = {}
