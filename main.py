@@ -207,7 +207,7 @@ def build_model(requests, depots):
 
     N_K = 16           # number of vehicles
     Q = 4              # vehicle capacity (seats)
-    M = 1_000_000      # Big-M for time window constraints
+    M = 500            # Big-M for time window constraints (max time span + max travel time)
 
     depot_start = list(range(N_R, N_R + N_D))
     depot_end = list(range(N_R + N_D, N_R + 2 * N_D))
