@@ -13,9 +13,9 @@ MATHEMATICAL FORMULATION
 ===============================================================================
 
 Sets:
-    R               Ride requests, |R| = 60
+    R               Ride requests, |R| = 40
     D               Depots, |D| = 5
-    K               Vehicles, |K| = 15 (5 Sedan + 5 SUV + 5 Van)
+    K               Vehicles, |K| = 12 (4 Sedan + 4 SUV + 4 Van)
     T               Vehicle types, |T| = 3 (Sedan, SUV, Van)
     N = R ∪ Ds ∪ De Extended node set
         Ds          Depot start nodes (one per depot)
@@ -94,7 +94,7 @@ DELIBERATE INEFFICIENCIES (for optimization agent demo)
 |---|----------------------------------------|----------------------------------------|-----------------|
 | 1 | Global Big-M = 1,000,000 (actual ~20-250) | Per-constraint tight M values       | ~30-40%         |
 | 2 | No arc pre-filtering (all N*(N-1) arcs)  | Filter time-infeasible arcs          | ~15-20%         |
-| 3 | No symmetry breaking (5 identical vehicles × 3 types = (5!)^3 equiv.) | z[k] >= z[k+1] within type | ~40-60%  |
+| 3 | No symmetry breaking (4 identical vehicles × 3 types = (4!)^3 equiv.) | z[k] >= z[k+1] within type | ~40-60%  |
 | 4 | No branching priorities (all vars default) | Prioritize z[k] and VIP y[i,k]    | ~15-25%         |
 | 5 | Default Symmetry=-1                     | Set Symmetry=2 (aggressive)           | ~10-20%         |
 | 6 | Default MIPFocus=0                      | Set MIPFocus=1 (feasibility)          | ~10-15%         |
@@ -346,7 +346,7 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
     # -----------------------------------------------------------------------
     model = gp.Model("uber_mdcvrptw")
     model.setParam("LogFile", "gurobi.log")
-    model.setParam("MIPGap", 0.008)  # 0.8% optimality gap
+    model.setParam("MIPGap", 0.01)  # 1.0% optimality gap
 
     # -----------------------------------------------------------------------
     # Decision variables

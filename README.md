@@ -6,7 +6,7 @@ A monolithic MILP that routes a heterogeneous fleet of vehicles from multiple de
 
 ## Problem
 
-Given 60 ride requests with time windows and priorities, 5 depots with vehicle limits, and 15 vehicles of 3 types:
+Given 40 ride requests with time windows and priorities, 5 depots with vehicle limits, and 12 vehicles of 3 types:
 
 - **Minimize** type-weighted travel costs + vehicle activation costs + priority-weighted unserved penalties
 - **Subject to** type-dependent capacity (4/6/10 seats), pickup time windows (30-60 min), route duration limits (90/120/150 min), depot vehicle caps, VIP must-serve, incompatible pairs, and minimum utilization
@@ -15,32 +15,32 @@ Given 60 ride requests with time windows and priorities, 5 depots with vehicle l
 
 | Component | Details |
 |-----------|---------|
-| Requests | 60 rides across Manhattan, Williamsburg, DUMBO, Roosevelt Island |
+| Requests | 40 rides across Manhattan, Williamsburg, DUMBO, Roosevelt Island |
 | Depots | 5 (Financial District, Midtown, Upper West Side, Williamsburg, Roosevelt Island) |
-| Vehicles | 15 (5 Sedan cap=4, 5 SUV cap=6, 5 Van cap=10) |
-| Binary vars | ~74,000 arc + assignment + activation variables |
-| Constraints | ~77,000 (time windows, flow, capacity, route duration, VIP, incompatible pairs, utilization) |
-| Solve time | 5-8 minutes (default settings) |
+| Vehicles | 12 (4 Sedan cap=4, 4 SUV cap=6, 4 Van cap=10) |
+| Binary vars | ~31,000 arc + assignment + activation variables |
+| Constraints | ~33,000 (time windows, flow, capacity, route duration, VIP, incompatible pairs, utilization) |
+| Solve time | 2-5 minutes (default settings) |
 
 ### Sets
 
 | Set | Description | Size |
 |-----|-------------|------|
-| R | Ride requests | 60 |
+| R | Ride requests | 40 |
 | D | Depots | 5 |
-| K | Vehicles | 15 (5 per type) |
+| K | Vehicles | 12 (4 per type) |
 | T | Vehicle types (Sedan, SUV, Van) | 3 |
-| N | Extended nodes (R + depot starts + depot ends) | 70 |
-| A | Arcs (all node pairs) | ~4,830 |
-| I | Incompatible request pairs | ~20 |
+| N | Extended nodes (R + depot starts + depot ends) | 50 |
+| A | Arcs (all node pairs) | ~2,450 |
+| I | Incompatible request pairs | ~12 |
 
 ### Vehicle Types
 
 | Type | Capacity | Max Route | Fixed Cost | Per-Min Cost | Count |
 |------|----------|-----------|------------|--------------|-------|
-| Sedan | 4 | 90 min | $40 | $1.0/min | 5 |
-| SUV | 6 | 120 min | $60 | $1.5/min | 5 |
-| Van | 10 | 150 min | $80 | $2.0/min | 5 |
+| Sedan | 4 | 90 min | $40 | $1.0/min | 4 |
+| SUV | 6 | 120 min | $60 | $1.5/min | 4 |
+| Van | 10 | 150 min | $80 | $2.0/min | 4 |
 
 ### Formulation
 
@@ -69,7 +69,7 @@ This model includes 7 deliberate inefficiencies for an optimization agent to dis
 |---|-------------|-----------|-----------------|
 | 1 | Global Big-M = 1,000,000 (actual ~20-250) | Per-constraint tight M values | ~30-40% |
 | 2 | No arc pre-filtering (all N*(N-1) arcs) | Filter time-infeasible arcs | ~15-20% |
-| 3 | No symmetry breaking (5 identical vehicles × 3 types) | `z[k] >= z[k+1]` within type | ~40-60% |
+| 3 | No symmetry breaking (4 identical vehicles × 3 types) | `z[k] >= z[k+1]` within type | ~40-60% |
 | 4 | No branching priorities | Prioritize `z[k]` and VIP `y[i,k]` | ~15-25% |
 | 5 | Default Symmetry=-1 | Set Symmetry=2 (aggressive) | ~10-20% |
 | 6 | Default MIPFocus=0 | Set MIPFocus=1 (feasibility) | ~10-15% |
@@ -91,10 +91,10 @@ Requires a valid Gurobi license ([free academic license](https://www.gurobi.com/
 |------|-------------|
 | `main.py` | Model formulation, solver, and solution reporter |
 | `generate_data.py` | Data generator (re-run to regenerate CSVs) |
-| `data/ride_requests.csv` | 60 ride requests with coordinates, time windows, and priorities |
+| `data/ride_requests.csv` | 40 ride requests with coordinates, time windows, and priorities |
 | `data/depots.csv` | 5 depot locations with max vehicle counts |
 | `data/vehicle_types.csv` | 3 vehicle types with capacities and costs |
-| `data/incompatible_pairs.csv` | ~20 incompatible request pairs |
+| `data/incompatible_pairs.csv` | ~12 incompatible request pairs |
 
 ## License
 
