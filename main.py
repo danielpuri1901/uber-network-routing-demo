@@ -2,9 +2,9 @@
 Uber Network Routing Demo -- Multi-Depot Capacitated Vehicle Routing
 with Time Windows (MDCVRPTW)
 
-Solves a single monolithic MILP for routing a fleet of vehicles from multiple
-depots to serve ride requests across Manhattan. Inspired by Uber's Gurobi case
-study on urban aerial ridesharing network design.
+Solves a single monolithic MILP for routing a heterogeneous fleet of vehicles
+from multiple depots to serve ride requests across Manhattan. Inspired by
+Uber's Gurobi case study on urban aerial ridesharing network design.
 
 Reference: https://www.gurobi.com/case_studies/uber-shaping-urban-aerial-ridesharing/
 
@@ -13,13 +13,15 @@ MATHEMATICAL FORMULATION
 ===============================================================================
 
 Sets:
-    R               Ride requests, |R| = 60
-    D               Depots, |D| = 4
-    K               Vehicles, |K| = 16
+    R               Ride requests, |R| = 80
+    D               Depots, |D| = 5
+    K               Vehicles, |K| = 24 (8 Sedan + 8 SUV + 8 Van)
+    T               Vehicle types, |T| = 3 (Sedan, SUV, Van)
     N = R ∪ Ds ∪ De Extended node set
         Ds          Depot start nodes (one per depot)
         De          Depot end nodes (one per depot)
     A               All arcs (i, j) for i, j ∈ N, i ≠ j
+    I               Incompatible request pairs
 
 Parameters:
     c[i,j]      Travel time (minutes) between nodes i and j
@@ -27,8 +29,14 @@ Parameters:
     e[i]        Earliest service time for node i
     l[i]        Latest service time for node i
     s[i]        Service duration at node i (pickup + ride + dropoff)
-    Q = 4       Vehicle capacity (seats)
+    p[i]        Priority of request i (1=VIP, 2=standard, 3=economy)
+    Q[k]        Capacity of vehicle k (type-dependent: 4/6/10)
+    R_max[k]    Maximum route duration for vehicle k (type-dependent: 90/120/150)
+    F[k]        Fixed activation cost for vehicle k (type-dependent: $40/$60/$80)
+    V[k]        Per-minute travel cost for vehicle k (type-dependent: $1.0/$1.5/$2.0)
+    W[d]        Maximum vehicles departing from depot d
     M = 1000000 Big-M constant for time window linearization
+    P[p]        Priority penalty: {1: 2000, 2: 1000, 3: 500}
 
 Decision Variables:
     x[i,j,k] ∈ {0,1}   1 if vehicle k travels arc (i,j)
@@ -37,7 +45,8 @@ Decision Variables:
     t[i,k]   ≥ 0       Arrival time of vehicle k at node i
 
 Objective:
-    Minimize  Σ c[i,j]·x[i,j,k]  +  50·Σ z[k]  +  1000·(|R| - Σ y[i,k])
+    Minimize  Σ V[k]·c[i,j]·x[i,j,k]  +  Σ F[k]·z[k]
+            + Σ P[p[i]]·(1 - Σk y[i,k])
 
 Constraints:
     (1) Each request served at most once:
@@ -58,13 +67,38 @@ Constraints:
         y[i,k] ≤ z[k]                                      ∀ i ∈ R, k ∈ K
     (9) Depot start activation:
         Σj x[ds,j,k] ≤ z[k]                                ∀ ds, k
-    (10) Capacity:
-        Σi q[i]·y[i,k] ≤ Q·z[k]                           ∀ k ∈ K
+    (10) Capacity (type-dependent):
+        Σi q[i]·y[i,k] ≤ Q[k]·z[k]                        ∀ k ∈ K
     (11) Time windows (Big-M):
         t[i,k] + s[i] + c[i,j] - M·(1 - x[i,j,k]) ≤ t[j,k]
                                                             ∀ (i,j) ∈ A, k ∈ K
     (12) Time bounds:
         e[i] ≤ t[i,k] ≤ l[i]                              ∀ i ∈ N, k ∈ K
+    (13) Maximum route duration (Big-M):
+        t[de,k] - t[ds,k] ≤ R_max[k] + M·(1 - Σj x[ds,j,k])
+                                                            ∀ depot pairs (ds,de), k
+    (14) Depot vehicle capacity:
+        Σk (Σj x[ds,j,k]) ≤ W[d]                          ∀ depot d
+    (15) VIP must-serve:
+        Σk y[i,k] = 1                                      ∀ i where p[i] = 1
+    (16) Incompatible pairs:
+        y[a,k] + y[b,k] ≤ 1                               ∀ (a,b) ∈ I, k ∈ K
+    (17) Minimum utilization:
+        Σi y[i,k] ≥ 2·z[k]                                ∀ k ∈ K
+
+===============================================================================
+DELIBERATE INEFFICIENCIES (for optimization agent demo)
+===============================================================================
+
+| # | Inefficiency                            | Agent Fix                              | Expected Speedup |
+|---|----------------------------------------|----------------------------------------|-----------------|
+| 1 | Global Big-M = 1,000,000 (actual ~20-250) | Per-constraint tight M values       | ~30-40%         |
+| 2 | No arc pre-filtering (all N*(N-1) arcs)  | Filter time-infeasible arcs          | ~15-20%         |
+| 3 | No symmetry breaking (8 identical vehicles × 3 types = (8!)^3 equiv.) | z[k] >= z[k+1] within type | ~40-60%  |
+| 4 | No branching priorities (all vars default) | Prioritize z[k] and VIP y[i,k]    | ~15-25%         |
+| 5 | Default Symmetry=-1                     | Set Symmetry=2 (aggressive)           | ~10-20%         |
+| 6 | Default MIPFocus=0                      | Set MIPFocus=1 (feasibility)          | ~10-15%         |
+| 7 | Default Cuts=-1                         | Set Cuts=2 (aggressive)               | ~10-20%         |
 
 ===============================================================================
 """
@@ -82,7 +116,7 @@ from gurobipy import GRB
 # ---------------------------------------------------------------------------
 
 def load_ride_requests(path="data/ride_requests.csv"):
-    """Load ride requests from CSV."""
+    """Load ride requests from CSV, including priority column."""
     requests = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -96,12 +130,13 @@ def load_ride_requests(path="data/ride_requests.csv"):
                 "earliest": int(row["earliest_pickup"]),
                 "latest": int(row["latest_pickup"]),
                 "passengers": int(row["passengers"]),
+                "priority": int(row["priority"]),
             })
     return requests
 
 
 def load_depots(path="data/depots.csv"):
-    """Load depot locations from CSV."""
+    """Load depot locations from CSV, including max_vehicles column."""
     depots = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -111,8 +146,37 @@ def load_depots(path="data/depots.csv"):
                 "lat": float(row["lat"]),
                 "lng": float(row["lng"]),
                 "name": row["name"],
+                "max_vehicles": int(row["max_vehicles"]),
             })
     return depots
+
+
+def load_vehicle_types(path="data/vehicle_types.csv"):
+    """Load vehicle type definitions from CSV."""
+    vtypes = []
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            vtypes.append({
+                "type_id": int(row["type_id"]),
+                "name": row["name"],
+                "capacity": int(row["capacity"]),
+                "max_route_minutes": int(row["max_route_minutes"]),
+                "fixed_cost": float(row["fixed_cost"]),
+                "per_minute_cost": float(row["per_minute_cost"]),
+                "count": int(row["count"]),
+            })
+    return vtypes
+
+
+def load_incompatible_pairs(path="data/incompatible_pairs.csv"):
+    """Load incompatible request pairs from CSV."""
+    pairs = []
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            pairs.append((int(row["request_a"]), int(row["request_b"])))
+    return pairs
 
 
 # ---------------------------------------------------------------------------
@@ -191,13 +255,13 @@ def build_travel_times(requests, depots):
 # Model building
 # ---------------------------------------------------------------------------
 
-def build_model(requests, depots):
+def build_model(requests, depots, vehicle_types, incompatible_pairs):
     """
-    Build the monolithic Multi-Depot CVRPTW model.
+    Build the monolithic Multi-Depot CVRPTW model with heterogeneous fleet.
 
     Creates arc variables x[i,j,k] for every pair of nodes (i,j) with i != j
     and every vehicle k. A single global Big-M constant (M = 1,000,000) is
-    used for all time-window linearization constraints.
+    used for all time-window and route-duration constraints.
 
     The arc set `arcs` contains all (i,j) pairs used for variable and
     constraint creation. Adjacency lists `out_nbrs` and `in_nbrs` are
@@ -205,15 +269,44 @@ def build_model(requests, depots):
     """
     travel, service, N_R, N_D, N = build_travel_times(requests, depots)
 
-    N_K = 16           # number of vehicles
-    Q = 4              # vehicle capacity (seats)
-    M = 1_000_000      # Big-M for time window constraints
+    # --- Vehicle type mappings ---
+    # Build per-vehicle properties from vehicle types
+    vehicles = []
+    vehicle_type = {}   # k -> type_id
+    vehicle_cap = {}    # k -> capacity
+    vehicle_max_route = {}  # k -> max route minutes
+    vehicle_fixed_cost = {}  # k -> fixed cost
+    vehicle_per_min_cost = {}  # k -> per-minute cost
+    type_groups = {}    # type_id -> [vehicle indices]
+
+    k_idx = 0
+    for vt in vehicle_types:
+        tid = vt["type_id"]
+        type_groups[tid] = []
+        for _ in range(vt["count"]):
+            vehicles.append(k_idx)
+            vehicle_type[k_idx] = tid
+            vehicle_cap[k_idx] = vt["capacity"]
+            vehicle_max_route[k_idx] = vt["max_route_minutes"]
+            vehicle_fixed_cost[k_idx] = vt["fixed_cost"]
+            vehicle_per_min_cost[k_idx] = vt["per_minute_cost"]
+            type_groups[tid].append(k_idx)
+            k_idx += 1
+
+    N_K = len(vehicles)
+    M = 1_000_000      # Big-M for time window and route duration constraints
+
+    # Priority penalties for unserved requests
+    priority_penalty = {1: 2000, 2: 1000, 3: 500}
+    req_priority = {r["id"]: r["priority"] for r in requests}
 
     depot_start = list(range(N_R, N_R + N_D))
     depot_end = list(range(N_R + N_D, N_R + 2 * N_D))
     request_nodes = list(range(N_R))
     all_nodes = list(range(N))
-    vehicles = list(range(N_K))
+
+    # Depot max vehicles mapping (depot index -> max_vehicles)
+    depot_max_vehicles = {d["id"]: d["max_vehicles"] for d in depots}
 
     # Time windows
     earliest = {}
@@ -230,6 +323,9 @@ def build_model(requests, depots):
 
     passengers = {r["id"]: r["passengers"] for r in requests}
 
+    # VIP requests (priority=1) that must be served
+    vip_requests = [r["id"] for r in requests if r["priority"] == 1]
+
     # -----------------------------------------------------------------------
     # Build arc set: all (i, j) pairs with i != j
     # -----------------------------------------------------------------------
@@ -243,6 +339,7 @@ def build_model(requests, depots):
         in_nbrs[j].append(i)
 
     print(f"  Arc pairs: {len(arcs):,} (of {N * (N - 1):,} possible)")
+    print(f"  Vehicles:  {N_K} ({', '.join(f'{vt['count']} {vt['name']}' for vt in vehicle_types)})")
 
     # -----------------------------------------------------------------------
     # Create model
@@ -256,12 +353,14 @@ def build_model(requests, depots):
     # -----------------------------------------------------------------------
 
     # x[i,j,k]: binary -- vehicle k traverses arc (i,j)
+    # Objective coefficient includes per-minute cost of vehicle type
     print("Creating arc variables x[i,j,k] ...")
     x = {}
     for k in vehicles:
+        cost_k = vehicle_per_min_cost[k]
         for i, j in arcs:
             x[i, j, k] = model.addVar(
-                vtype=GRB.BINARY, obj=travel[i, j],
+                vtype=GRB.BINARY, obj=cost_k * travel[i, j],
                 name=f"x_{i}_{j}_{k}",
             )
 
@@ -292,13 +391,19 @@ def build_model(requests, depots):
     model.update()
 
     # -----------------------------------------------------------------------
-    # Objective
+    # Objective: type-dependent costs + priority-dependent unserved penalties
     # -----------------------------------------------------------------------
-    served = gp.quicksum(y[i, k] for i in request_nodes for k in vehicles)
+    # Travel cost is already in x[i,j,k] obj coefficients.
+    # Add: fixed activation costs + priority-weighted unserved penalties
+    fixed_cost_expr = gp.quicksum(
+        vehicle_fixed_cost[k] * z[k] for k in vehicles
+    )
+    unserved_penalty_expr = gp.quicksum(
+        priority_penalty[req_priority[i]] * (1 - gp.quicksum(y[i, k] for k in vehicles))
+        for i in request_nodes
+    )
     model.setObjective(
-        model.getObjective()
-        + 50.0 * gp.quicksum(z[k] for k in vehicles)
-        + 1000.0 * (N_R - served),
+        model.getObjective() + fixed_cost_expr + unserved_penalty_expr,
         GRB.MINIMIZE,
     )
 
@@ -381,11 +486,11 @@ def build_model(requests, depots):
                     f"depot_act_{d_s}_{k}",
                 )
 
-    # (10) Capacity
+    # (10) Capacity (type-dependent)
     for k in vehicles:
         model.addConstr(
             gp.quicksum(passengers[i] * y[i, k] for i in request_nodes)
-            <= Q * z[k],
+            <= vehicle_cap[k] * z[k],
             f"capacity_{k}",
         )
 
@@ -402,6 +507,62 @@ def build_model(requests, depots):
             )
     print(f"  {len(arcs) * N_K:,} time-window constraints added")
 
+    # (13) Maximum route duration (Big-M linearization)
+    # For each depot pair (start, end) and each vehicle: route duration ≤ max
+    print("Adding route duration constraints ...")
+    n_route_dur = 0
+    for d_idx in range(N_D):
+        d_s = depot_start[d_idx]
+        d_e = depot_end[d_idx]
+        for k in vehicles:
+            model.addConstr(
+                t[d_e, k] - t[d_s, k]
+                <= vehicle_max_route[k] + M * (1 - gp.quicksum(x[d_s, j, k] for j in out_nbrs[d_s])),
+                f"route_dur_{d_idx}_{k}",
+            )
+            n_route_dur += 1
+    print(f"  {n_route_dur:,} route duration constraints added")
+
+    # (14) Depot vehicle capacity
+    print("Adding depot vehicle capacity constraints ...")
+    for d_idx in range(N_D):
+        d_s = depot_start[d_idx]
+        model.addConstr(
+            gp.quicksum(
+                gp.quicksum(x[d_s, j, k] for j in out_nbrs[d_s])
+                for k in vehicles
+            ) <= depot_max_vehicles[d_idx],
+            f"depot_cap_{d_idx}",
+        )
+
+    # (15) VIP must-serve: priority=1 requests must be served
+    print(f"Adding VIP must-serve constraints ({len(vip_requests)} VIP requests) ...")
+    for i in vip_requests:
+        model.addConstr(
+            gp.quicksum(y[i, k] for k in vehicles) == 1,
+            f"vip_serve_{i}",
+        )
+
+    # (16) Incompatible request pairs: cannot be on same vehicle
+    print(f"Adding incompatible pair constraints ({len(incompatible_pairs)} pairs) ...")
+    n_incompat = 0
+    for a, b in incompatible_pairs:
+        for k in vehicles:
+            model.addConstr(
+                y[a, k] + y[b, k] <= 1,
+                f"incompat_{a}_{b}_{k}",
+            )
+            n_incompat += 1
+    print(f"  {n_incompat:,} incompatibility constraints added")
+
+    # (17) Minimum utilization: active vehicles serve >= 2 requests
+    print("Adding minimum utilization constraints ...")
+    for k in vehicles:
+        model.addConstr(
+            gp.quicksum(y[i, k] for i in request_nodes) >= 2 * z[k],
+            f"min_util_{k}",
+        )
+
     model.update()
 
     # Print model statistics
@@ -412,7 +573,10 @@ def build_model(requests, depots):
     print(f"  Constraints:  {model.NumConstrs:,}")
     print(f"  Non-zeros:    {model.NumNZs:,}")
 
-    return model, x, y, z, t, requests, depots, vehicles, request_nodes, N_R, N_D
+    return (model, x, y, z, t, requests, depots, vehicles, request_nodes,
+            N_R, N_D, vehicle_types, vehicle_type, vehicle_cap,
+            vehicle_max_route, vehicle_fixed_cost, vehicle_per_min_cost,
+            type_groups)
 
 
 # ---------------------------------------------------------------------------
@@ -420,8 +584,10 @@ def build_model(requests, depots):
 # ---------------------------------------------------------------------------
 
 def report_solution(model, x, y, z, t, requests, depots, vehicles,
-                    request_nodes, N_R, N_D):
-    """Print a summary of the optimized solution."""
+                    request_nodes, N_R, N_D, vehicle_types, vehicle_type_map,
+                    vehicle_cap, vehicle_max_route, vehicle_fixed_cost,
+                    vehicle_per_min_cost, type_groups):
+    """Print a detailed summary of the optimized solution."""
     if model.SolCount == 0:
         print("\nNo feasible solution found.")
         return
@@ -442,6 +608,21 @@ def report_solution(model, x, y, z, t, requests, depots, vehicles,
     print(f"Active vehicles: {len(active)} / {len(vehicles)}")
     print(f"Requests served: {served} / {len(request_nodes)}")
 
+    # Vehicle type breakdown
+    type_names = {vt["type_id"]: vt["name"] for vt in vehicle_types}
+    print(f"\nVehicle type breakdown:")
+    total_fixed = 0.0
+    total_travel = 0.0
+    for vt in vehicle_types:
+        tid = vt["type_id"]
+        active_of_type = [k for k in type_groups[tid] if z[k].X > 0.5]
+        type_fixed = sum(vehicle_fixed_cost[k] for k in active_of_type)
+        total_fixed += type_fixed
+        print(f"  {vt['name']:6s}: {len(active_of_type)} active / {vt['count']} available "
+              f"(fixed cost: ${type_fixed:.0f})")
+
+    # Route details
+    print(f"\nRoute details:")
     for k in active:
         current = None
         for d_s in depot_start:
@@ -473,8 +654,17 @@ def report_solution(model, x, y, z, t, requests, depots, vehicles,
         reqs = [n for n in route if n < N_R]
         d_idx = route[0] - N_R
         d_name = depots[d_idx]["name"] if 0 <= d_idx < len(depots) else "?"
-        print(f"  Vehicle {k:2d} ({d_name}): "
-              f"{len(reqs)} requests -> {' -> '.join(str(n) for n in route)}")
+        tname = type_names.get(vehicle_type_map[k], "?")
+
+        # Compute route duration
+        start_time = t[route[0], k].X if (route[0], k) in t else 0
+        end_time = t[route[-1], k].X if (route[-1], k) in t else 0
+        duration = end_time - start_time
+
+        pax = sum(requests[n]["passengers"] for n in reqs) if reqs else 0
+        print(f"  Vehicle {k:2d} [{tname:5s}] ({d_name}): "
+              f"{len(reqs)} reqs, {pax} pax, {duration:.0f} min "
+              f"-> {' -> '.join(str(n) for n in route)}")
 
 
 # ---------------------------------------------------------------------------
@@ -489,12 +679,20 @@ def main():
     print("\nLoading data ...")
     requests = load_ride_requests()
     depots = load_depots()
-    print(f"  {len(requests)} ride requests, {len(depots)} depots")
+    vehicle_types = load_vehicle_types()
+    incompatible_pairs = load_incompatible_pairs()
+    total_vehicles = sum(vt["count"] for vt in vehicle_types)
+    print(f"  {len(requests)} ride requests, {len(depots)} depots, "
+          f"{total_vehicles} vehicles ({len(vehicle_types)} types), "
+          f"{len(incompatible_pairs)} incompatible pairs")
 
     print("\nBuilding model ...")
     t0 = time_module.time()
-    result = build_model(requests, depots)
-    model, x, y, z, t_var, requests, depots, vehicles, request_nodes, N_R, N_D = result
+    result = build_model(requests, depots, vehicle_types, incompatible_pairs)
+    (model, x, y, z, t_var, requests, depots, vehicles, request_nodes,
+     N_R, N_D, vehicle_types, vehicle_type_map, vehicle_cap,
+     vehicle_max_route, vehicle_fixed_cost, vehicle_per_min_cost,
+     type_groups) = result
     build_time = time_module.time() - t0
     print(f"Model built in {build_time:.1f}s")
 
@@ -505,7 +703,9 @@ def main():
     print(f"\nSolve time: {solve_time:.1f}s")
 
     report_solution(model, x, y, z, t_var, requests, depots, vehicles,
-                    request_nodes, N_R, N_D)
+                    request_nodes, N_R, N_D, vehicle_types, vehicle_type_map,
+                    vehicle_cap, vehicle_max_route, vehicle_fixed_cost,
+                    vehicle_per_min_cost, type_groups)
 
     print(f"\nTotal time: {build_time + solve_time:.1f}s")
     print(f"Log written to gurobi.log")

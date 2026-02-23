@@ -1,5 +1,6 @@
-depot_id,lat,lng,name
-0,40.71,-74.008,Financial District
-1,40.752,-73.978,Midtown
-2,40.782,-73.971,Upper West Side
-3,40.714,-73.962,Williamsburg
+depot_id,lat,lng,name,max_vehicles
+0,40.71,-74.008,Financial District,6
+1,40.752,-73.978,Midtown,6
+2,40.782,-73.971,Upper West Side,5
+3,40.714,-73.962,Williamsburg,5
+4,40.762,-73.952,Roosevelt Island,5
