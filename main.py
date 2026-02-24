@@ -495,13 +495,15 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
         )
 
     # (11) Time window feasibility (Big-M linearization)
-    # Uses the arc set and a single global M for all constraints.
+    # Uses tighter Big-M values computed per arc
     print("Adding time-window Big-M constraints ...")
     for k in vehicles:
         for i, j in arcs:
+            # Compute tighter Big-M: latest possible arrival at j minus earliest at i
+            M_ij = latest.get(j, M) - earliest.get(i, 0)
             model.addConstr(
                 t[i, k] + service[i] + travel[i, j]
-                - M * (1 - x[i, j, k])
+                - M_ij * (1 - x[i, j, k])
                 <= t[j, k],
                 f"tw_{i}_{j}_{k}",
             )
