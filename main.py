@@ -346,7 +346,7 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
     # -----------------------------------------------------------------------
     model = gp.Model("uber_mdcvrptw")
     model.setParam("LogFile", "gurobi.log")
-    model.setParam("MIPGap", 0.001)  # 0.1% optimality gap
+    model.setParam("MIPGap", 0.015)  # 1.5% optimality gap
 
     # -----------------------------------------------------------------------
     # Decision variables
