@@ -495,13 +495,15 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
         )
 
     # (11) Time window feasibility (Big-M linearization)
-    # Uses the arc set and a single global M for all constraints.
+    # Uses tighter Big-M values computed per arc
     print("Adding time-window Big-M constraints ...")
     for k in vehicles:
         for i, j in arcs:
+            # Compute tighter Big-M: latest possible arrival at j minus earliest at i
+            M_ij = latest.get(j, M) - earliest.get(i, 0)
             model.addConstr(
                 t[i, k] + service[i] + travel[i, j]
-                - M * (1 - x[i, j, k])
+                - M_ij * (1 - x[i, j, k])
                 <= t[j, k],
                 f"tw_{i}_{j}_{k}",
             )
@@ -548,12 +550,13 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
     n_incompat = 0
     for a, b in incompatible_pairs:
         for k in vehicles:
-            model.addConstr(
+            constr = model.addConstr(
                 y[a, k] + y[b, k] <= 1,
                 f"incompat_{a}_{b}_{k}",
             )
+            constr.Lazy = 1  # Mark as lazy constraint
             n_incompat += 1
-    print(f"  {n_incompat:,} incompatibility constraints added")
+    print(f"  {n_incompat:,} incompatibility constraints added (lazy)")
 
     # (17) Minimum utilization: active vehicles serve >= 2 requests
     print("Adding minimum utilization constraints ...")
@@ -562,6 +565,22 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
             gp.quicksum(y[i, k] for i in request_nodes) >= 2 * z[k],
             f"min_util_{k}",
         )
+
+    # (18) Symmetry breaking: within each vehicle type, activate in order
+    print("Adding symmetry-breaking constraints ...")
+    n_sym_break = 0
+    for vt in vehicle_types:
+        tid = vt["type_id"]
+        type_vehicles = sorted(type_groups[tid])
+        for i in range(1, len(type_vehicles)):
+            k_prev = type_vehicles[i-1]
+            k_curr = type_vehicles[i]
+            model.addConstr(
+                z[k_curr] <= z[k_prev],
+                f"sym_break_{tid}_{i}",
+            )
+            n_sym_break += 1
+    print(f"  {n_sym_break:,} symmetry-breaking constraints added")
 
     model.update()
 
