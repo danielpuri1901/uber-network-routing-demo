@@ -550,13 +550,12 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
     n_incompat = 0
     for a, b in incompatible_pairs:
         for k in vehicles:
-            constr = model.addConstr(
+            model.addConstr(
                 y[a, k] + y[b, k] <= 1,
                 f"incompat_{a}_{b}_{k}",
             )
-            constr.Lazy = 1  # Mark as lazy constraint
             n_incompat += 1
-    print(f"  {n_incompat:,} incompatibility constraints added (lazy)")
+    print(f"  {n_incompat:,} incompatibility constraints added")
 
     # (17) Minimum utilization: active vehicles serve >= 2 requests
     print("Adding minimum utilization constraints ...")
