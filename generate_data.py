@@ -3,10 +3,10 @@ Generate synthetic ride request, depot, vehicle type, and incompatibility data
 for the Uber Network Routing Demo.
 
 Creates:
-    data/ride_requests.csv      -- 40 ride requests with priority levels
+    data/ride_requests.csv      -- 50 ride requests with priority levels
     data/depots.csv             -- 5 depot locations with max vehicle counts
     data/vehicle_types.csv      -- 3 vehicle types (Sedan, SUV, Van)
-    data/incompatible_pairs.csv -- ~12 incompatible request pairs
+    data/incompatible_pairs.csv -- ~15 incompatible request pairs
 
 Coordinates cover Manhattan plus Williamsburg/DUMBO/Roosevelt Island
 (lat ~40.70-40.81, lng ~-74.01 to -73.94).
@@ -19,7 +19,7 @@ import os
 import random
 
 SEED = 42
-NUM_REQUESTS = 40
+NUM_REQUESTS = 50
 
 # Neighborhoods: (name, center_lat, center_lng, demand_weight)
 NEIGHBORHOODS = [
@@ -115,7 +115,7 @@ def generate_vehicle_types():
             "max_route_minutes": 90,
             "fixed_cost": 40,
             "per_minute_cost": 1.0,
-            "count": 4,
+            "count": 5,
         },
         {
             "type_id": 1,
@@ -124,7 +124,7 @@ def generate_vehicle_types():
             "max_route_minutes": 120,
             "fixed_cost": 60,
             "per_minute_cost": 1.5,
-            "count": 4,
+            "count": 5,
         },
         {
             "type_id": 2,
@@ -133,12 +133,12 @@ def generate_vehicle_types():
             "max_route_minutes": 150,
             "fixed_cost": 80,
             "per_minute_cost": 2.0,
-            "count": 4,
+            "count": 5,
         },
     ]
 
 
-def generate_incompatible_pairs(requests, rng, target_pairs=12):
+def generate_incompatible_pairs(requests, rng, target_pairs=15):
     """
     Generate incompatible request pairs based on two criteria:
     1. Time-overlap + geographic distance: requests whose time windows overlap

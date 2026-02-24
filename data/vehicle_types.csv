@@ -1,4 +1,4 @@
 type_id,name,capacity,max_route_minutes,fixed_cost,per_minute_cost,count
-0,Sedan,4,90,40,1.0,4
-1,SUV,6,120,60,1.5,4
-2,Van,10,150,80,2.0,4
+0,Sedan,4,90,40,1.0,5
+1,SUV,6,120,60,1.5,5
+2,Van,10,150,80,2.0,5
