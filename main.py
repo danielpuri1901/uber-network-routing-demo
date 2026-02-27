@@ -506,7 +506,7 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
                 - M_ij * (1 - x[i, j, k])
                 <= t[j, k],
                 f"tw_{i}_{j}_{k}",
-            ).Lazy = 1
+            )
     print(f"  {len(arcs) * N_K:,} time-window constraints added")
 
     # (13) Maximum route duration (Big-M linearization)
