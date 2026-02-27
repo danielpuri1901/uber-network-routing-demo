@@ -495,13 +495,15 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
         )
 
     # (11) Time window feasibility (Big-M linearization)
-    # Uses the arc set and a single global M for all constraints.
+    # Uses tighter arc-specific Big-M values based on time windows.
     print("Adding time-window Big-M constraints ...")
     for k in vehicles:
         for i, j in arcs:
+            # Tighter Big-M: maximum possible violation if arc not used
+            M_ij = latest.get(j, M) - earliest.get(i, 0) + service[i] + travel[i, j]
             model.addConstr(
                 t[i, k] + service[i] + travel[i, j]
-                - M * (1 - x[i, j, k])
+                - M_ij * (1 - x[i, j, k])
                 <= t[j, k],
                 f"tw_{i}_{j}_{k}",
             )
@@ -562,6 +564,21 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
             gp.quicksum(y[i, k] for i in request_nodes) >= 2 * z[k],
             f"min_util_{k}",
         )
+
+    # (18) Symmetry breaking: for same vehicle type, activate in order
+    print("Adding symmetry-breaking constraints ...")
+    n_symmetry = 0
+    for vtype_id, vtype_vehicles in type_groups.items():
+        if len(vtype_vehicles) > 1:
+            for i in range(len(vtype_vehicles) - 1):
+                k1 = vtype_vehicles[i]
+                k2 = vtype_vehicles[i + 1]
+                model.addConstr(
+                    z[k1] >= z[k2],
+                    f"symmetry_{vtype_id}_{i}"
+                )
+                n_symmetry += 1
+    print(f"  {n_symmetry:,} symmetry-breaking constraints added")
 
     model.update()
 
