@@ -563,20 +563,6 @@ def build_model(requests, depots, vehicle_types, incompatible_pairs):
             f"min_util_{k}",
         )
 
-    # (18) Symmetry breaking: within each vehicle type, activate in order
-    print("Adding vehicle symmetry-breaking constraints ...")
-    n_symmetry = 0
-    for vtype_id, vtype_vehicles in type_groups.items():
-        if len(vtype_vehicles) > 1:
-            for i in range(len(vtype_vehicles) - 1):
-                k1, k2 = vtype_vehicles[i], vtype_vehicles[i + 1]
-                model.addConstr(
-                    z[k1] >= z[k2],
-                    f"symmetry_{vtype_id}_{i}",
-                )
-                n_symmetry += 1
-    print(f"  {n_symmetry:,} symmetry-breaking constraints added")
-
     model.update()
 
     # Print model statistics
