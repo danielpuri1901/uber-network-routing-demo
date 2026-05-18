@@ -4,12 +4,24 @@
 
 A monolithic MILP that routes a heterogeneous fleet of vehicles from multiple depots to serve ride requests across Manhattan. Inspired by [Uber's Gurobi case study](https://www.gurobi.com/case_studies/uber-shaping-urban-aerial-ridesharing/) on urban aerial ridesharing network design.
 
+## Accomplishments
+
+Built by [Daniel Puri](https://github.com/danielpuri1901) as one of three MILP test problems used to design the eval harness for [`optimaze-agent`](https://github.com/danielpuri1901/optimaze-agent) — my open-source Gurobi auto-tuner. The **7 deliberate inefficiencies** in this model (listed below) are exactly the kind of pathology optimaze's tuning agent is designed to discover and fix.
+
+- **~55,000 binary variables / ~57,000 constraints** — the largest of the three optimaze test problems
+- Drove the design of optimaze's **automated eval harness** over the MIPLIB benchmark suite — tracking solve time, optimality gap, and branch-and-bound nodes
+- Helped optimaze achieve **up to 85% peak / 20–50% typical solve-time improvement** vs. default Gurobi configurations
+- Optimaze was **presented to Gurobi's optimization team** and **received an acquisition offer (declined)**
+- Distributed as a public **PyPI package** — [`optimaze`](https://pypi.org/project/optimaze/)
+
+The other two test problems are [`mobian-optimization`](https://github.com/danielpuri1901/mobian-optimization) and [`timor-leste-healthcare`](https://github.com/danielpuri1901/timor-leste-healthcare).
+
 ## Problem
 
 Given 50 ride requests with time windows and priorities, 5 depots with vehicle limits, and 15 vehicles of 3 types:
 
 - **Minimize** type-weighted travel costs + vehicle activation costs + priority-weighted unserved penalties
-- **Subject to** type-dependent capacity (4/6/10 seats), pickup time windows (30-60 min), route duration limits (90/120/150 min), depot vehicle caps, VIP must-serve, incompatible pairs, and minimum utilization
+- **Subject to** type-dependent capacity (4/6/10 seats), pickup time windows (30–60 min), route duration limits (90/120/150 min), depot vehicle caps, VIP must-serve, incompatible pairs, and minimum utilization
 
 ## Model
 
@@ -34,10 +46,10 @@ Given 50 ride requests with time windows and priorities, 5 depots with vehicle l
 | A | Arcs (all node pairs) | ~3,540 |
 | I | Incompatible request pairs | ~15 |
 
-### Vehicle Types
+### Vehicle types
 
-| Type | Capacity | Max Route | Fixed Cost | Per-Min Cost | Count |
-|------|----------|-----------|------------|--------------|-------|
+| Type | Capacity | Max route | Fixed cost | Per-minute cost | Count |
+|------|----------|-----------|------------|-----------------|-------|
 | Sedan | 4 | 90 min | $40 | $1.0/min | 5 |
 | SUV | 6 | 120 min | $60 | $1.5/min | 5 |
 | Van | 10 | 150 min | $80 | $2.0/min | 5 |
@@ -49,33 +61,33 @@ Given 50 ride requests with time windows and priorities, 5 depots with vehicle l
 - **Activation variables** `z[k]`: vehicle k is used
 - **Time variables** `t[i,k]`: arrival time at node i
 
-**Constraints (1-12):** Standard MDCVRPTW (serve once, assignment-arc consistency, flow conservation, depot departure/return, activation linking, type-dependent capacity, Big-M time windows, time bounds)
+**Constraints (1–12):** standard MDCVRPTW (serve-once, assignment–arc consistency, flow conservation, depot departure/return, activation linking, type-dependent capacity, Big-M time windows, time bounds)
 
-**Constraint (13) Route duration:** `t[de,k] - t[ds,k] <= max_route[k] + M*(1 - Σj x[ds,j,k])`
+**(13) Route duration:** `t[de,k] - t[ds,k] <= max_route[k] + M*(1 - Σj x[ds,j,k])`
 
-**Constraint (14) Depot vehicle cap:** `Σk (Σj x[ds,j,k]) <= max_vehicles[d]`
+**(14) Depot vehicle cap:** `Σk (Σj x[ds,j,k]) <= max_vehicles[d]`
 
-**Constraint (15) VIP must-serve:** `Σk y[i,k] = 1` for priority-1 requests
+**(15) VIP must-serve:** `Σk y[i,k] = 1` for priority-1 requests
 
-**Constraint (16) Incompatible pairs:** `y[a,k] + y[b,k] <= 1` for each pair and vehicle
+**(16) Incompatible pairs:** `y[a,k] + y[b,k] <= 1` for each pair and vehicle
 
-**Constraint (17) Minimum utilization:** `Σi y[i,k] >= 2*z[k]`
+**(17) Minimum utilization:** `Σi y[i,k] >= 2*z[k]`
 
-### Deliberate Inefficiencies
+### Deliberate inefficiencies (test cases for `optimaze-agent`)
 
-This model includes 7 deliberate inefficiencies for an optimization agent to discover and fix:
+This model contains 7 known pathologies. The optimaze tuning agent should discover and fix each:
 
-| # | Inefficiency | Agent Fix | Expected Speedup |
-|---|-------------|-----------|-----------------|
-| 1 | Global Big-M = 1,000,000 (actual ~20-250) | Per-constraint tight M values | ~30-40% |
-| 2 | No arc pre-filtering (all N*(N-1) arcs) | Filter time-infeasible arcs | ~15-20% |
-| 3 | No symmetry breaking (5 identical vehicles × 3 types) | `z[k] >= z[k+1]` within type | ~40-60% |
-| 4 | No branching priorities | Prioritize `z[k]` and VIP `y[i,k]` | ~15-25% |
-| 5 | Default Symmetry=-1 | Set Symmetry=2 (aggressive) | ~10-20% |
-| 6 | Default MIPFocus=0 | Set MIPFocus=1 (feasibility) | ~10-15% |
-| 7 | Default Cuts=-1 | Set Cuts=2 (aggressive) | ~10-20% |
+| # | Inefficiency | Agent fix | Expected speed-up |
+|---|---|---|---|
+| 1 | Global Big-M = 1,000,000 (actual ~20–250) | Per-constraint tight M values | ~30–40% |
+| 2 | No arc pre-filtering (all N·(N−1) arcs) | Filter time-infeasible arcs | ~15–20% |
+| 3 | No symmetry breaking (5 identical vehicles × 3 types) | `z[k] >= z[k+1]` within type | ~40–60% |
+| 4 | No branching priorities | Prioritize `z[k]` and VIP `y[i,k]` | ~15–25% |
+| 5 | Default `Symmetry=-1` | Set `Symmetry=2` (aggressive) | ~10–20% |
+| 6 | Default `MIPFocus=0` | Set `MIPFocus=1` (feasibility) | ~10–15% |
+| 7 | Default `Cuts=-1` | Set `Cuts=2` (aggressive) | ~10–20% |
 
-## Quick Start
+## Quick start
 
 ```bash
 pip install gurobipy
@@ -83,7 +95,7 @@ python generate_data.py   # regenerate data (optional)
 python main.py
 ```
 
-Requires a valid Gurobi license ([free academic license](https://www.gurobi.com/academia/academic-program-and-licenses/)).
+Requires a valid Gurobi licence ([free academic licence](https://www.gurobi.com/academia/academic-program-and-licenses/)).
 
 ## Files
 
@@ -96,6 +108,12 @@ Requires a valid Gurobi license ([free academic license](https://www.gurobi.com/
 | `data/vehicle_types.csv` | 3 vehicle types with capacities and costs |
 | `data/incompatible_pairs.csv` | ~15 incompatible request pairs |
 
+## See also
+
+- **[`optimaze-agent`](https://github.com/danielpuri1901/optimaze-agent)** — the open-source Gurobi tuner this problem helps test ([PyPI](https://pypi.org/project/optimaze/))
+- **[`mobian-optimization`](https://github.com/danielpuri1901/mobian-optimization)** — Park & Bike hub location, ~672K vars
+- **[`timor-leste-healthcare`](https://github.com/danielpuri1901/timor-leste-healthcare)** — rural hospital placement set-cover variant
+
 ## License
 
-MIT
+MIT.
